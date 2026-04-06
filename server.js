@@ -281,6 +281,19 @@ app.get('/api/resumen', auth, (req, res) => {
   });
 });
 
+
+// Eliminar producto
+app.delete('/api/productos/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM productos WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Borrar TODO el historial de ventas (admin)
+app.delete('/api/ventas/all', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM ventas').run();
+  res.json({ ok: true });
+});
+
 app.get('*', (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
