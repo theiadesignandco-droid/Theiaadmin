@@ -193,9 +193,12 @@ app.post('/api/productos', auth, adminOnly, (req, res) => {
 });
 
 app.put('/api/productos/:id', auth, adminOnly, (req, res) => {
-  const { nom, cat, punto } = req.body || {};
-  db.prepare('UPDATE productos SET nom=?,cat=?,punto=? WHERE id=?').run(nom, cat, punto, req.params.id);
-  res.json({ ok: true });
+  const { nom, cat, punto, cod, stock } = req.body || {};
+  try {
+    db.prepare('UPDATE productos SET nom=?,cat=?,punto=?,cod=?,stock=? WHERE id=?')
+      .run(nom, cat, parseFloat(punto)||1, cod, parseFloat(stock)||0, req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(400).json({ error: 'El código ya existe' }); }
 });
 
 // Ingreso de stock (suma cantidad)
@@ -250,9 +253,19 @@ app.post('/api/ventas', auth, (req, res) => {
 });
 
 app.put('/api/ventas/:id', auth, (req, res) => {
-  const { estado, logistica, obs, colocador } = req.body || {};
-  db.prepare('UPDATE ventas SET estado=?,logistica=?,obs=?,colocador=? WHERE id=?')
-    .run(estado, logistica, obs, colocador, req.params.id);
+  const v = req.body || {};
+  const total_usd = v.precio_usd && v.cantidad ? parseFloat((v.cantidad * v.precio_usd).toFixed(2)) : null;
+  const total_ars = total_usd && v.dolar ? Math.round(total_usd * v.dolar) : null;
+  db.prepare(`UPDATE ventas SET cliente=?,fecha=?,producto=?,cantidad=?,precio_usd=?,dolar=?,
+    total_usd=?,total_ars=?,pago=?,estado=?,logistica=?,dir=?,obs=?,colocador=?,tel=?,canal=? WHERE id=?`)
+    .run(v.cliente,v.fecha,v.producto,v.cantidad,v.precio_usd,v.dolar,
+         total_usd,total_ars,v.pago,v.estado,v.logistica,v.dir||'',v.obs||'',v.colocador||'',v.tel||'',v.canal||'',req.params.id);
+  res.json({ ok: true });
+});
+
+// Borrar una venta por id
+app.delete('/api/ventas/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM ventas WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
