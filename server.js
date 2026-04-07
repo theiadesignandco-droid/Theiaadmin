@@ -7,14 +7,15 @@ const cors = require('cors');
 
 const app = express();
 const db = new Database(process.env.DB_PATH || 'theia.db');
-const JWT_SECRET = process.env.JWT_SECRET || 'theia-secret-cambia-en-produccion-2026';
+const JWT_SECRET = process.env.JWT_SECRET || 'theia-secret-2026';
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-
 db.pragma('journal_mode = WAL');
+
+// ─── Schema ───────────────────────────────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,7 +24,7 @@ db.exec(`
     password TEXT NOT NULL,
     rol TEXT NOT NULL DEFAULT 'vendedor',
     activo INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    created_at TEXT DEFAULT (datetime('now','localtime'))
   );
   CREATE TABLE IF NOT EXISTS productos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,42 +41,84 @@ db.exec(`
     cliente TEXT NOT NULL,
     tel TEXT DEFAULT '',
     canal TEXT DEFAULT '',
-    producto TEXT NOT NULL,
-    cantidad REAL NOT NULL,
-    precio_usd REAL NOT NULL,
-    dolar REAL NOT NULL,
-    total_usd REAL NOT NULL,
-    total_ars REAL NOT NULL,
+    dolar REAL NOT NULL DEFAULT 1400,
+    total_usd REAL NOT NULL DEFAULT 0,
+    total_ars REAL NOT NULL DEFAULT 0,
     pago TEXT DEFAULT '',
     estado TEXT NOT NULL DEFAULT 'Pendiente',
     logistica TEXT DEFAULT '',
     dir TEXT DEFAULT '',
     obs TEXT DEFAULT '',
-    colocador TEXT DEFAULT '',
     user_id INTEGER,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY(user_id) REFERENCES users(id)
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  );
+  CREATE TABLE IF NOT EXISTS ventas_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    venta_id INTEGER NOT NULL,
+    producto TEXT NOT NULL,
+    cantidad REAL NOT NULL,
+    precio_usd REAL NOT NULL,
+    subtotal_usd REAL NOT NULL,
+    subtotal_ars REAL NOT NULL,
+    FOREIGN KEY(venta_id) REFERENCES ventas(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS colocaciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    venta_id INTEGER,
+    cod TEXT UNIQUE NOT NULL,
+    fecha TEXT NOT NULL,
+    cliente TEXT NOT NULL,
+    colocador TEXT NOT NULL DEFAULT '',
+    omega_qty REAL NOT NULL DEFAULT 0,
+    pgc_qty REAL NOT NULL DEFAULT 0,
+    precio_omega REAL NOT NULL DEFAULT 5,
+    precio_pgc REAL NOT NULL DEFAULT 16.5,
+    subtotal_perfileria_usd REAL NOT NULL DEFAULT 0,
+    honorarios_usd REAL NOT NULL DEFAULT 0,
+    total_usd REAL NOT NULL DEFAULT 0,
+    total_ars REAL NOT NULL DEFAULT 0,
+    dolar REAL NOT NULL DEFAULT 1400,
+    estado TEXT NOT NULL DEFAULT 'Pendiente',
+    obs TEXT DEFAULT '',
+    user_id INTEGER,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY(venta_id) REFERENCES ventas(id) ON DELETE SET NULL
   );
   CREATE TABLE IF NOT EXISTS ingresos_stock (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    fecha TEXT DEFAULT (datetime('now','localtime')),
     producto_cod TEXT NOT NULL,
     contenedor TEXT DEFAULT '',
     cantidad REAL NOT NULL,
-    user_id INTEGER,
-    FOREIGN KEY(user_id) REFERENCES users(id)
+    user_id INTEGER
   );
 `);
 
-if (!db.prepare('SELECT id FROM users WHERE username = ?').get('admin')) {
-  db.prepare('INSERT INTO users (nombre, username, password, rol) VALUES (?,?,?,?)')
-    .run('Administrador', 'admin', bcrypt.hashSync('Theia2025', 10), 'admin');
-  console.log('✅ Admin creado: admin / Theia2025');
+// Migrate old ventas (single product → items)
+try {
+  const cols = db.prepare('PRAGMA table_info(ventas)').all().map(c => c.name);
+  if (cols.includes('producto')) {
+    const old = db.prepare("SELECT * FROM ventas WHERE producto IS NOT NULL AND producto != ''").all();
+    const ins = db.prepare('INSERT OR IGNORE INTO ventas_items (venta_id,producto,cantidad,precio_usd,subtotal_usd,subtotal_ars) VALUES (?,?,?,?,?,?)');
+    db.transaction(() => old.forEach(v => {
+      const exists = db.prepare('SELECT COUNT(*) as c FROM ventas_items WHERE venta_id=?').get(v.id).c;
+      if (!exists && v.producto) ins.run(v.id, v.producto, v.cantidad||1, v.precio_usd||0, v.total_usd||0, v.total_ars||0);
+    }))();
+    console.log('✅ Migración de ventas legacy OK');
+  }
+} catch(e) { console.log('Migración omitida:', e.message); }
+
+// Seed admin
+if (!db.prepare('SELECT id FROM users WHERE username=?').get('admin')) {
+  db.prepare('INSERT INTO users (nombre,username,password,rol) VALUES (?,?,?,?)')
+    .run('Administrador','admin',bcrypt.hashSync('Theia2025',10),'admin');
+  console.log('✅ admin / Theia2025');
 }
 
+// Seed productos
 if (db.prepare('SELECT COUNT(*) as c FROM productos').get().c === 0) {
   const ins = db.prepare('INSERT OR IGNORE INTO productos (cod,nom,cat,stock,punto) VALUES (?,?,?,?,?)');
-  const prods = [
+  db.transaction(rows => rows.forEach(r => ins.run(...r)))([
     ['D-0302-2','WALL PANEL WPC | TEAK','WPC',0,50],
     ['D-0302-1','WALL PANEL WPC | TEAK AND BLACK','WPC',0,50],
     ['D-0303-10','PERFIL ESQUINERO WPC','WPC',0,20],
@@ -109,205 +152,240 @@ if (db.prepare('SELECT COUNT(*) as c FROM productos').get().c === 0) {
     ['D-0405-1','WOOD TABURETE','MUEBLES',0,1],
     ['D-0402-5','MESA REDONDA','MUEBLES',0,1],
     ['D-0402-6','MESA CURVED','MUEBLES',0,1],
-  ];
-  db.transaction(rows => rows.forEach(r => ins.run(...r)))(prods);
-  console.log('✅ Productos cargados (stock en 0)');
+  ]);
+  console.log('✅ Productos cargados');
 }
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
-
-function auth(req, res, next) {
-  const token = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'Sin token' });
-  try { req.user = jwt.verify(token, JWT_SECRET); next(); }
-  catch { res.status(401).json({ error: 'Token inválido o expirado' }); }
+function auth(req,res,next){
+  const token=(req.headers.authorization||'').replace('Bearer ','');
+  if(!token) return res.status(401).json({error:'Sin token'});
+  try{req.user=jwt.verify(token,JWT_SECRET);next();}
+  catch{res.status(401).json({error:'Token inválido'});}
 }
-
-function adminOnly(req, res, next) {
-  if (req.user.rol !== 'admin') return res.status(403).json({ error: 'Acceso denegado' });
+function adminOnly(req,res,next){
+  if(req.user.rol!=='admin') return res.status(403).json({error:'Acceso denegado'});
   next();
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
-
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
-  const user = db.prepare('SELECT * FROM users WHERE username = ? AND activo = 1').get((username||'').trim().toLowerCase());
-  if (!user || !bcrypt.compareSync(password||'', user.password))
-    return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
-  const payload = { id: user.id, nombre: user.nombre, username: user.username, rol: user.rol };
-  res.json({ token: jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' }), user: payload });
+app.post('/api/auth/login',(req,res)=>{
+  const {username,password}=req.body||{};
+  const user=db.prepare('SELECT * FROM users WHERE username=? AND activo=1').get((username||'').trim().toLowerCase());
+  if(!user||!bcrypt.compareSync(password||'',user.password))
+    return res.status(401).json({error:'Usuario o contraseña incorrectos'});
+  const p={id:user.id,nombre:user.nombre,username:user.username,rol:user.rol};
+  res.json({token:jwt.sign(p,JWT_SECRET,{expiresIn:'7d'}),user:p});
 });
 
-app.post('/api/auth/change-password', auth, (req, res) => {
-  const { actual, nueva } = req.body || {};
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!bcrypt.compareSync(actual||'', user.password)) return res.status(400).json({ error: 'Contraseña actual incorrecta' });
-  if (!nueva || nueva.length < 6) return res.status(400).json({ error: 'Mínimo 6 caracteres' });
-  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(nueva, 10), req.user.id);
-  res.json({ ok: true });
+app.post('/api/auth/change-password',auth,(req,res)=>{
+  const {actual,nueva}=req.body||{};
+  const user=db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
+  if(!bcrypt.compareSync(actual||'',user.password)) return res.status(400).json({error:'Contraseña actual incorrecta'});
+  if(!nueva||nueva.length<6) return res.status(400).json({error:'Mínimo 6 caracteres'});
+  db.prepare('UPDATE users SET password=? WHERE id=?').run(bcrypt.hashSync(nueva,10),req.user.id);
+  res.json({ok:true});
 });
 
 // ─── Usuarios ─────────────────────────────────────────────────────────────────
-
-app.get('/api/users', auth, adminOnly, (req, res) =>
+app.get('/api/users',auth,adminOnly,(req,res)=>
   res.json(db.prepare('SELECT id,nombre,username,rol,activo,created_at FROM users ORDER BY created_at DESC').all()));
 
-app.post('/api/users', auth, adminOnly, (req, res) => {
-  const { nombre, username, password, rol } = req.body || {};
-  if (!nombre || !username || !password) return res.status(400).json({ error: 'Faltan campos' });
-  if (password.length < 6) return res.status(400).json({ error: 'Contraseña mínima 6 caracteres' });
-  try {
-    const r = db.prepare('INSERT INTO users (nombre,username,password,rol) VALUES (?,?,?,?)')
-      .run(nombre.trim(), username.trim().toLowerCase(), bcrypt.hashSync(password, 10), rol || 'vendedor');
-    res.json({ id: r.lastInsertRowid, nombre, username: username.toLowerCase(), rol: rol || 'vendedor', activo: 1 });
-  } catch { res.status(400).json({ error: 'El nombre de usuario ya existe' }); }
+app.post('/api/users',auth,adminOnly,(req,res)=>{
+  const {nombre,username,password,rol}=req.body||{};
+  if(!nombre||!username||!password) return res.status(400).json({error:'Faltan campos'});
+  if(password.length<6) return res.status(400).json({error:'Mínimo 6 caracteres'});
+  try{
+    const r=db.prepare('INSERT INTO users (nombre,username,password,rol) VALUES (?,?,?,?)')
+      .run(nombre.trim(),username.trim().toLowerCase(),bcrypt.hashSync(password,10),rol||'vendedor');
+    res.json({id:r.lastInsertRowid,nombre,username:username.toLowerCase(),rol:rol||'vendedor',activo:1});
+  }catch{res.status(400).json({error:'El usuario ya existe'});}
 });
 
-app.put('/api/users/:id', auth, adminOnly, (req, res) => {
-  const id = parseInt(req.params.id);
-  const { nombre, rol, activo, password } = req.body || {};
-  if (activo === 0 && id === req.user.id) return res.status(400).json({ error: 'No podés desactivarte' });
-  if (password) {
-    if (password.length < 6) return res.status(400).json({ error: 'Mínimo 6 caracteres' });
-    db.prepare('UPDATE users SET nombre=?,rol=?,activo=?,password=? WHERE id=?').run(nombre, rol, activo, bcrypt.hashSync(password, 10), id);
-  } else {
-    db.prepare('UPDATE users SET nombre=?,rol=?,activo=? WHERE id=?').run(nombre, rol, activo, id);
+app.put('/api/users/:id',auth,adminOnly,(req,res)=>{
+  const id=parseInt(req.params.id);
+  const {nombre,rol,activo,password}=req.body||{};
+  if(activo===0&&id===req.user.id) return res.status(400).json({error:'No podés desactivarte'});
+  if(password){
+    if(password.length<6) return res.status(400).json({error:'Mínimo 6 caracteres'});
+    db.prepare('UPDATE users SET nombre=?,rol=?,activo=?,password=? WHERE id=?').run(nombre,rol,activo,bcrypt.hashSync(password,10),id);
+  }else{
+    db.prepare('UPDATE users SET nombre=?,rol=?,activo=? WHERE id=?').run(nombre,rol,activo,id);
   }
-  res.json({ ok: true });
+  res.json({ok:true});
 });
 
 // ─── Productos ────────────────────────────────────────────────────────────────
+app.get('/api/productos',auth,(req,res)=>
+  res.json(db.prepare('SELECT * FROM productos ORDER BY cat,nom').all()));
 
-app.get('/api/productos', auth, (req, res) =>
-  res.json(db.prepare('SELECT * FROM productos ORDER BY cat, nom').all()));
-
-app.post('/api/productos', auth, adminOnly, (req, res) => {
-  const { cod, nom, cat, stock, punto } = req.body || {};
-  if (!cod || !nom || !cat) return res.status(400).json({ error: 'Faltan campos' });
-  try {
-    const r = db.prepare('INSERT INTO productos (cod,nom,cat,stock,punto) VALUES (?,?,?,?,?)')
-      .run(cod.trim().toUpperCase(), nom.trim().toUpperCase(), cat, stock || 0, punto || 1);
-    res.json({ id: r.lastInsertRowid, cod: cod.toUpperCase(), nom: nom.toUpperCase(), cat, stock: stock || 0, punto: punto || 1 });
-  } catch { res.status(400).json({ error: 'El código ya existe' }); }
+app.post('/api/productos',auth,adminOnly,(req,res)=>{
+  const {cod,nom,cat,stock,punto}=req.body||{};
+  if(!cod||!nom||!cat) return res.status(400).json({error:'Faltan campos'});
+  try{
+    const r=db.prepare('INSERT INTO productos (cod,nom,cat,stock,punto) VALUES (?,?,?,?,?)')
+      .run(cod.trim().toUpperCase(),nom.trim().toUpperCase(),cat,stock||0,punto||1);
+    res.json({id:r.lastInsertRowid,cod:cod.toUpperCase(),nom:nom.toUpperCase(),cat,stock:stock||0,punto:punto||1});
+  }catch{res.status(400).json({error:'El código ya existe'});}
 });
 
-app.put('/api/productos/:id', auth, adminOnly, (req, res) => {
-  const { nom, cat, punto, cod, stock } = req.body || {};
-  try {
+app.put('/api/productos/:id',auth,adminOnly,(req,res)=>{
+  const {nom,cat,punto,cod,stock}=req.body||{};
+  try{
     db.prepare('UPDATE productos SET nom=?,cat=?,punto=?,cod=?,stock=? WHERE id=?')
-      .run(nom, cat, parseFloat(punto)||1, cod, parseFloat(stock)||0, req.params.id);
-    res.json({ ok: true });
-  } catch(e) { res.status(400).json({ error: 'El código ya existe' }); }
+      .run(nom,cat,parseFloat(punto)||0,cod,parseFloat(stock)||0,req.params.id);
+    res.json({ok:true});
+  }catch{res.status(400).json({error:'El código ya existe'});}
 });
 
-// Ingreso de stock (suma cantidad)
-app.post('/api/productos/:cod/ingreso', auth, (req, res) => {
-  const { cantidad, contenedor } = req.body || {};
-  if (!cantidad || cantidad <= 0) return res.status(400).json({ error: 'Cantidad inválida' });
-  const prod = db.prepare('SELECT * FROM productos WHERE cod = ?').get(req.params.cod);
-  if (!prod) return res.status(404).json({ error: 'Producto no encontrado' });
-  db.prepare('UPDATE productos SET stock = stock + ? WHERE cod = ?').run(cantidad, req.params.cod);
-  db.prepare('INSERT INTO ingresos_stock (producto_cod,contenedor,cantidad,user_id) VALUES (?,?,?,?)')
-    .run(req.params.cod, contenedor || '', cantidad, req.user.id);
-  res.json({ ok: true });
+app.delete('/api/productos/:id',auth,adminOnly,(req,res)=>{
+  db.prepare('DELETE FROM productos WHERE id=?').run(req.params.id);res.json({ok:true});
 });
 
-// Ajuste directo de stock
-app.put('/api/productos/:id/stock', auth, (req, res) => {
-  const { stock } = req.body || {};
-  if (stock === undefined || stock === null || stock === '') return res.status(400).json({ error: 'Stock inválido' });
-  db.prepare('UPDATE productos SET stock = ? WHERE id = ?').run(parseFloat(stock), req.params.id);
-  res.json({ ok: true });
+app.post('/api/productos/:cod/ingreso',auth,(req,res)=>{
+  const {cantidad,contenedor}=req.body||{};
+  if(!cantidad||cantidad<=0) return res.status(400).json({error:'Cantidad inválida'});
+  const prod=db.prepare('SELECT * FROM productos WHERE cod=?').get(req.params.cod);
+  if(!prod) return res.status(404).json({error:'No encontrado'});
+  db.prepare('UPDATE productos SET stock=stock+? WHERE cod=?').run(cantidad,req.params.cod);
+  db.prepare('INSERT INTO ingresos_stock (producto_cod,contenedor,cantidad,user_id) VALUES (?,?,?,?)').run(req.params.cod,contenedor||'',cantidad,req.user.id);
+  res.json({ok:true});
 });
 
 // ─── Ventas ───────────────────────────────────────────────────────────────────
+function ventasConItems(){
+  const vs=db.prepare(`SELECT v.*,u.nombre as vendedor FROM ventas v LEFT JOIN users u ON v.user_id=u.id ORDER BY v.fecha DESC,v.created_at DESC`).all();
+  const mp={};
+  db.prepare('SELECT * FROM ventas_items ORDER BY id').all().forEach(i=>{if(!mp[i.venta_id])mp[i.venta_id]=[];mp[i.venta_id].push(i)});
+  return vs.map(v=>({...v,items:mp[v.id]||[]}));
+}
 
-app.get('/api/ventas', auth, (req, res) =>
-  res.json(db.prepare(`
-    SELECT v.*, u.nombre as vendedor FROM ventas v
-    LEFT JOIN users u ON v.user_id = u.id
-    ORDER BY v.fecha DESC, v.created_at DESC
-  `).all()));
+app.get('/api/ventas',auth,(req,res)=>res.json(ventasConItems()));
 
-app.post('/api/ventas', auth, (req, res) => {
-  const v = req.body || {};
-  if (!v.cliente || !v.producto || !v.cantidad || !v.precio_usd)
-    return res.status(400).json({ error: 'Faltan campos obligatorios' });
-  const fecha = v.fecha || new Date().toISOString().split('T')[0];
-  const mes = fecha.substring(0, 7).replace('-', '');
-  const prefix = `TV-${mes}`;
-  const count = db.prepare("SELECT COUNT(*) as c FROM ventas WHERE cod LIKE ?").get(`${prefix}%`).c;
-  const cod = `${prefix}-${(count + 1).toString().padStart(3, '0')}`;
-  const total_usd = parseFloat((v.cantidad * v.precio_usd).toFixed(2));
-  const total_ars = Math.round(total_usd * v.dolar);
-  try {
-    db.prepare(`INSERT INTO ventas (cod,fecha,cliente,tel,canal,producto,cantidad,precio_usd,dolar,total_usd,total_ars,pago,estado,logistica,dir,obs,colocador,user_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(cod, fecha, v.cliente, v.tel||'', v.canal||'', v.producto, v.cantidad, v.precio_usd,
-           v.dolar, total_usd, total_ars, v.pago||'', v.estado||'Pendiente',
-           v.logistica||'', v.dir||'', v.obs||'', v.colocador||'', req.user.id);
-    db.prepare('UPDATE productos SET stock = stock - ? WHERE nom = ?').run(v.cantidad, v.producto);
-    res.json({ cod, total_usd, total_ars });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+app.post('/api/ventas',auth,(req,res)=>{
+  const v=req.body||{};
+  const items=v.items||[];
+  if(!v.cliente||!items.length) return res.status(400).json({error:'Faltan cliente o ítems'});
+  if(items.some(i=>!i.producto||!i.cantidad||!i.precio_usd)) return res.status(400).json({error:'Cada ítem necesita producto, cantidad y precio'});
+  const fecha=v.fecha||new Date().toISOString().split('T')[0];
+  const mes=fecha.substring(0,7).replace('-','');
+  const prefix=`TV-${mes}`;
+  const count=db.prepare("SELECT COUNT(*) as c FROM ventas WHERE cod LIKE ?").get(`${prefix}%`).c;
+  const cod=`${prefix}-${(count+1).toString().padStart(3,'0')}`;
+  const dolar=parseFloat(v.dolar)||1400;
+  const calc=items.map(i=>{const su=parseFloat((i.cantidad*i.precio_usd).toFixed(2));return{...i,su,sa:Math.round(su*dolar)}});
+  const tu=parseFloat(calc.reduce((s,i)=>s+i.su,0).toFixed(2));
+  const ta=Math.round(tu*dolar);
+  try{
+    db.transaction(()=>{
+      const r=db.prepare(`INSERT INTO ventas (cod,fecha,cliente,tel,canal,dolar,total_usd,total_ars,pago,estado,logistica,dir,obs,user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(cod,fecha,v.cliente,v.tel||'',v.canal||'',dolar,tu,ta,v.pago||'',v.estado||'Pendiente',v.logistica||'',v.dir||'',v.obs||'',req.user.id);
+      const ins=db.prepare('INSERT INTO ventas_items (venta_id,producto,cantidad,precio_usd,subtotal_usd,subtotal_ars) VALUES (?,?,?,?,?,?)');
+      calc.forEach(i=>{ins.run(r.lastInsertRowid,i.producto,i.cantidad,i.precio_usd,i.su,i.sa);db.prepare('UPDATE productos SET stock=stock-? WHERE nom=?').run(i.cantidad,i.producto)});
+    })();
+    res.json({cod,total_usd:tu,total_ars:ta});
+  }catch(e){res.status(400).json({error:e.message});}
 });
 
-app.put('/api/ventas/:id', auth, (req, res) => {
-  const v = req.body || {};
-  const total_usd = v.precio_usd && v.cantidad ? parseFloat((v.cantidad * v.precio_usd).toFixed(2)) : null;
-  const total_ars = total_usd && v.dolar ? Math.round(total_usd * v.dolar) : null;
-  db.prepare(`UPDATE ventas SET cliente=?,fecha=?,producto=?,cantidad=?,precio_usd=?,dolar=?,
-    total_usd=?,total_ars=?,pago=?,estado=?,logistica=?,dir=?,obs=?,colocador=?,tel=?,canal=? WHERE id=?`)
-    .run(v.cliente,v.fecha,v.producto,v.cantidad,v.precio_usd,v.dolar,
-         total_usd,total_ars,v.pago,v.estado,v.logistica,v.dir||'',v.obs||'',v.colocador||'',v.tel||'',v.canal||'',req.params.id);
-  res.json({ ok: true });
+app.put('/api/ventas/:id',auth,(req,res)=>{
+  const v=req.body||{};
+  const items=v.items||[];
+  const dolar=parseFloat(v.dolar)||1400;
+  try{
+    db.transaction(()=>{
+      if(items.length){
+        const calc=items.map(i=>{const su=parseFloat((i.cantidad*i.precio_usd).toFixed(2));return{...i,su,sa:Math.round(su*dolar)}});
+        const tu=parseFloat(calc.reduce((s,i)=>s+i.su,0).toFixed(2));
+        const ta=Math.round(tu*dolar);
+        db.prepare(`UPDATE ventas SET cliente=?,fecha=?,dolar=?,total_usd=?,total_ars=?,pago=?,estado=?,logistica=?,dir=?,obs=?,tel=?,canal=? WHERE id=?`)
+          .run(v.cliente,v.fecha,dolar,tu,ta,v.pago,v.estado,v.logistica,v.dir||'',v.obs||'',v.tel||'',v.canal||'',req.params.id);
+        db.prepare('DELETE FROM ventas_items WHERE venta_id=?').run(req.params.id);
+        const ins=db.prepare('INSERT INTO ventas_items (venta_id,producto,cantidad,precio_usd,subtotal_usd,subtotal_ars) VALUES (?,?,?,?,?,?)');
+        calc.forEach(i=>ins.run(req.params.id,i.producto,i.cantidad,i.precio_usd,i.su,i.sa));
+      }else{
+        db.prepare(`UPDATE ventas SET cliente=?,fecha=?,pago=?,estado=?,logistica=?,dir=?,obs=?,tel=?,canal=? WHERE id=?`)
+          .run(v.cliente,v.fecha,v.pago,v.estado,v.logistica,v.dir||'',v.obs||'',v.tel||'',v.canal||'',req.params.id);
+      }
+    })();
+    res.json({ok:true});
+  }catch(e){res.status(400).json({error:e.message});}
 });
 
-// Borrar una venta por id
-app.delete('/api/ventas/:id', auth, adminOnly, (req, res) => {
-  db.prepare('DELETE FROM ventas WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+app.delete('/api/ventas/all',auth,adminOnly,(req,res)=>{
+  db.prepare('DELETE FROM ventas_items').run();db.prepare('DELETE FROM ventas').run();res.json({ok:true});
 });
 
-// ─── Resumen mensual ──────────────────────────────────────────────────────────
+app.delete('/api/ventas/:id',auth,adminOnly,(req,res)=>{
+  db.prepare('DELETE FROM ventas_items WHERE venta_id=?').run(req.params.id);
+  db.prepare('DELETE FROM ventas WHERE id=?').run(req.params.id);res.json({ok:true});
+});
 
-app.get('/api/resumen', auth, (req, res) => {
-  const mes = req.query.mes || new Date().toISOString().substring(0, 7);
-  const desde = `${mes}-01`;
-  const hasta = `${mes}-31`;
-  const g = (sql, ...p) => db.prepare(sql).get(...p);
+// ─── Colocaciones ─────────────────────────────────────────────────────────────
+app.get('/api/colocaciones',auth,(req,res)=>
+  res.json(db.prepare(`SELECT c.*,u.nombre as vendedor,v.cod as venta_cod FROM colocaciones c LEFT JOIN users u ON c.user_id=u.id LEFT JOIN ventas v ON c.venta_id=v.id ORDER BY c.fecha DESC,c.created_at DESC`).all()));
+
+app.post('/api/colocaciones',auth,(req,res)=>{
+  const c=req.body||{};
+  if(!c.cliente||!c.colocador) return res.status(400).json({error:'Faltan cliente y colocador'});
+  const fecha=c.fecha||new Date().toISOString().split('T')[0];
+  const mes=fecha.substring(0,7).replace('-','');
+  const prefix=`COL-${mes}`;
+  const count=db.prepare("SELECT COUNT(*) as c FROM colocaciones WHERE cod LIKE ?").get(`${prefix}%`).c;
+  const cod=`${prefix}-${(count+1).toString().padStart(3,'0')}`;
+  const dolar=parseFloat(c.dolar)||1400;
+  const p_omega=parseFloat(c.precio_omega)||5;
+  const p_pgc=parseFloat(c.precio_pgc)||16.5;
+  const omega=parseFloat(c.omega_qty)||0;
+  const pgc=parseFloat(c.pgc_qty)||0;
+  const sub_perf=parseFloat((omega*p_omega+pgc*p_pgc).toFixed(2));
+  const hon=parseFloat(c.honorarios_usd)||0;
+  const tu=parseFloat((sub_perf+hon).toFixed(2));
+  const ta=Math.round(tu*dolar);
+  try{
+    const r=db.prepare(`INSERT INTO colocaciones (venta_id,cod,fecha,cliente,colocador,omega_qty,pgc_qty,precio_omega,precio_pgc,subtotal_perfileria_usd,honorarios_usd,total_usd,total_ars,dolar,estado,obs,user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(c.venta_id||null,cod,fecha,c.cliente,c.colocador,omega,pgc,p_omega,p_pgc,sub_perf,hon,tu,ta,dolar,c.estado||'Pendiente',c.obs||'',req.user.id);
+    res.json({id:r.lastInsertRowid,cod,total_usd:tu,total_ars:ta});
+  }catch(e){res.status(400).json({error:e.message});}
+});
+
+app.put('/api/colocaciones/:id',auth,(req,res)=>{
+  const c=req.body||{};
+  const dolar=parseFloat(c.dolar)||1400;
+  const p_omega=parseFloat(c.precio_omega)||5;
+  const p_pgc=parseFloat(c.precio_pgc)||16.5;
+  const omega=parseFloat(c.omega_qty)||0;
+  const pgc=parseFloat(c.pgc_qty)||0;
+  const sub_perf=parseFloat((omega*p_omega+pgc*p_pgc).toFixed(2));
+  const hon=parseFloat(c.honorarios_usd)||0;
+  const tu=parseFloat((sub_perf+hon).toFixed(2));
+  const ta=Math.round(tu*dolar);
+  db.prepare(`UPDATE colocaciones SET venta_id=?,fecha=?,cliente=?,colocador=?,omega_qty=?,pgc_qty=?,precio_omega=?,precio_pgc=?,subtotal_perfileria_usd=?,honorarios_usd=?,total_usd=?,total_ars=?,dolar=?,estado=?,obs=? WHERE id=?`)
+    .run(c.venta_id||null,c.fecha,c.cliente,c.colocador,omega,pgc,p_omega,p_pgc,sub_perf,hon,tu,ta,dolar,c.estado,c.obs||'',req.params.id);
+  res.json({ok:true});
+});
+
+app.delete('/api/colocaciones/:id',auth,adminOnly,(req,res)=>{
+  db.prepare('DELETE FROM colocaciones WHERE id=?').run(req.params.id);res.json({ok:true});
+});
+
+// ─── Resumen ──────────────────────────────────────────────────────────────────
+app.get('/api/resumen',auth,(req,res)=>{
+  const mes=req.query.mes||new Date().toISOString().substring(0,7);
+  const desde=`${mes}-01`,hasta=`${mes}-31`;
+  const g=(sql,...p)=>db.prepare(sql).get(...p);
   res.json({
     mes,
-    ventas_mes_usd:   g("SELECT COALESCE(SUM(total_usd),0) as v FROM ventas WHERE fecha BETWEEN ? AND ?", desde, hasta).v,
-    ventas_mes_ars:   g("SELECT COALESCE(SUM(total_ars),0) as v FROM ventas WHERE fecha BETWEEN ? AND ?", desde, hasta).v,
-    cant_ventas_mes:  g("SELECT COUNT(*) as v FROM ventas WHERE fecha BETWEEN ? AND ?", desde, hasta).v,
-    pendiente:        g("SELECT COALESCE(SUM(total_ars),0) as v FROM ventas WHERE estado != 'Pagado'").v,
-    pendiente_mes:    g("SELECT COALESCE(SUM(total_ars),0) as v FROM ventas WHERE estado != 'Pagado' AND fecha BETWEEN ? AND ?", desde, hasta).v,
-    productos_alerta: g("SELECT COUNT(*) as v FROM productos WHERE stock > 0 AND stock <= punto").v,
-    productos_sin_stock: g("SELECT COUNT(*) as v FROM productos WHERE stock <= 0").v,
-    ventas_recientes: db.prepare(`
-      SELECT v.*, u.nombre as vendedor FROM ventas v
-      LEFT JOIN users u ON v.user_id = u.id
-      WHERE v.fecha BETWEEN ? AND ?
-      ORDER BY v.fecha DESC LIMIT 8
-    `).all(desde, hasta),
+    ventas_mes_usd:   g("SELECT COALESCE(SUM(total_usd),0) as v FROM ventas WHERE fecha BETWEEN ? AND ?",desde,hasta).v,
+    ventas_mes_ars:   g("SELECT COALESCE(SUM(total_ars),0) as v FROM ventas WHERE fecha BETWEEN ? AND ?",desde,hasta).v,
+    cant_ventas_mes:  g("SELECT COUNT(*) as v FROM ventas WHERE fecha BETWEEN ? AND ?",desde,hasta).v,
+    col_mes_usd:      g("SELECT COALESCE(SUM(total_usd),0) as v FROM colocaciones WHERE fecha BETWEEN ? AND ?",desde,hasta).v,
+    col_mes_ars:      g("SELECT COALESCE(SUM(total_ars),0) as v FROM colocaciones WHERE fecha BETWEEN ? AND ?",desde,hasta).v,
+    pendiente:        g("SELECT COALESCE(SUM(total_ars),0) as v FROM ventas WHERE estado!='Pagado'").v,
+    productos_alerta: g("SELECT COUNT(*) as v FROM productos WHERE stock>0 AND stock<=punto").v,
+    productos_sin_stock: g("SELECT COUNT(*) as v FROM productos WHERE stock<=0").v,
+    ventas_recientes: db.prepare(`SELECT v.*,u.nombre as vendedor FROM ventas v LEFT JOIN users u ON v.user_id=u.id WHERE v.fecha BETWEEN ? AND ? ORDER BY v.fecha DESC LIMIT 8`).all(desde,hasta),
   });
 });
 
-
-// Eliminar producto
-app.delete('/api/productos/:id', auth, adminOnly, (req, res) => {
-  db.prepare('DELETE FROM productos WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
-});
-
-// Borrar TODO el historial de ventas (admin)
-app.delete('/api/ventas/all', auth, adminOnly, (req, res) => {
-  db.prepare('DELETE FROM ventas').run();
-  res.json({ ok: true });
-});
-
-app.get('*', (req, res) =>
-  res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-app.listen(PORT, () => console.log(`\n🚀 Theia en http://localhost:${PORT}  —  admin / Theia2025\n`));
+app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
+app.listen(PORT,()=>console.log(`\n🚀 Theia en http://localhost:${PORT}  —  admin/Theia2025\n`));
