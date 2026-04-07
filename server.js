@@ -65,15 +65,11 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS colocaciones (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     venta_id INTEGER,
+    venta_cod TEXT DEFAULT '',
     cod TEXT UNIQUE NOT NULL,
     fecha TEXT NOT NULL,
     cliente TEXT NOT NULL,
     colocador TEXT NOT NULL DEFAULT '',
-    omega_qty REAL NOT NULL DEFAULT 0,
-    pgc_qty REAL NOT NULL DEFAULT 0,
-    precio_omega REAL NOT NULL DEFAULT 5,
-    precio_pgc REAL NOT NULL DEFAULT 16.5,
-    subtotal_perfileria_usd REAL NOT NULL DEFAULT 0,
     honorarios_usd REAL NOT NULL DEFAULT 0,
     total_usd REAL NOT NULL DEFAULT 0,
     total_ars REAL NOT NULL DEFAULT 0,
@@ -333,34 +329,35 @@ app.post('/api/colocaciones',auth,(req,res)=>{
   const count=db.prepare("SELECT COUNT(*) as c FROM colocaciones WHERE cod LIKE ?").get(`${prefix}%`).c;
   const cod=`${prefix}-${(count+1).toString().padStart(3,'0')}`;
   const dolar=parseFloat(c.dolar)||1400;
-  const p_omega=parseFloat(c.precio_omega)||5;
-  const p_pgc=parseFloat(c.precio_pgc)||16.5;
-  const omega=parseFloat(c.omega_qty)||0;
-  const pgc=parseFloat(c.pgc_qty)||0;
-  const sub_perf=parseFloat((omega*p_omega+pgc*p_pgc).toFixed(2));
   const hon=parseFloat(c.honorarios_usd)||0;
-  const tu=parseFloat((sub_perf+hon).toFixed(2));
-  const ta=Math.round(tu*dolar);
+  const ta=Math.round(hon*dolar);
+  // Buscar venta por código si se pasó
+  let venta_id=c.venta_id||null;
+  let venta_cod=c.venta_cod||'';
+  if(venta_cod&&!venta_id){
+    const v=db.prepare('SELECT id FROM ventas WHERE cod=?').get(venta_cod.trim().toUpperCase());
+    if(v) venta_id=v.id;
+  }
   try{
-    const r=db.prepare(`INSERT INTO colocaciones (venta_id,cod,fecha,cliente,colocador,omega_qty,pgc_qty,precio_omega,precio_pgc,subtotal_perfileria_usd,honorarios_usd,total_usd,total_ars,dolar,estado,obs,user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(c.venta_id||null,cod,fecha,c.cliente,c.colocador,omega,pgc,p_omega,p_pgc,sub_perf,hon,tu,ta,dolar,c.estado||'Pendiente',c.obs||'',req.user.id);
-    res.json({id:r.lastInsertRowid,cod,total_usd:tu,total_ars:ta});
+    const r=db.prepare(`INSERT INTO colocaciones (venta_id,venta_cod,cod,fecha,cliente,colocador,honorarios_usd,total_usd,total_ars,dolar,estado,obs,user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(venta_id,venta_cod,cod,fecha,c.cliente,c.colocador,hon,hon,ta,dolar,c.estado||'Pendiente',c.obs||'',req.user.id);
+    res.json({id:r.lastInsertRowid,cod,total_usd:hon,total_ars:ta});
   }catch(e){res.status(400).json({error:e.message});}
 });
 
 app.put('/api/colocaciones/:id',auth,(req,res)=>{
   const c=req.body||{};
   const dolar=parseFloat(c.dolar)||1400;
-  const p_omega=parseFloat(c.precio_omega)||5;
-  const p_pgc=parseFloat(c.precio_pgc)||16.5;
-  const omega=parseFloat(c.omega_qty)||0;
-  const pgc=parseFloat(c.pgc_qty)||0;
-  const sub_perf=parseFloat((omega*p_omega+pgc*p_pgc).toFixed(2));
   const hon=parseFloat(c.honorarios_usd)||0;
-  const tu=parseFloat((sub_perf+hon).toFixed(2));
-  const ta=Math.round(tu*dolar);
-  db.prepare(`UPDATE colocaciones SET venta_id=?,fecha=?,cliente=?,colocador=?,omega_qty=?,pgc_qty=?,precio_omega=?,precio_pgc=?,subtotal_perfileria_usd=?,honorarios_usd=?,total_usd=?,total_ars=?,dolar=?,estado=?,obs=? WHERE id=?`)
-    .run(c.venta_id||null,c.fecha,c.cliente,c.colocador,omega,pgc,p_omega,p_pgc,sub_perf,hon,tu,ta,dolar,c.estado,c.obs||'',req.params.id);
+  const ta=Math.round(hon*dolar);
+  let venta_id=c.venta_id||null;
+  let venta_cod=c.venta_cod||'';
+  if(venta_cod&&!venta_id){
+    const v=db.prepare('SELECT id FROM ventas WHERE cod=?').get(venta_cod.trim().toUpperCase());
+    if(v) venta_id=v.id;
+  }
+  db.prepare(`UPDATE colocaciones SET venta_id=?,venta_cod=?,fecha=?,cliente=?,colocador=?,honorarios_usd=?,total_usd=?,total_ars=?,dolar=?,estado=?,obs=? WHERE id=?`)
+    .run(venta_id,venta_cod,c.fecha,c.cliente,c.colocador,hon,hon,ta,dolar,c.estado,c.obs||'',req.params.id);
   res.json({ok:true});
 });
 
@@ -383,7 +380,9 @@ app.get('/api/resumen',auth,(req,res)=>{
     pendiente:        g("SELECT COALESCE(SUM(total_ars),0) as v FROM ventas WHERE estado!='Pagado'").v,
     productos_alerta: g("SELECT COUNT(*) as v FROM productos WHERE stock>0 AND stock<=punto").v,
     productos_sin_stock: g("SELECT COUNT(*) as v FROM productos WHERE stock<=0").v,
+    col_pendiente:    g("SELECT COALESCE(SUM(total_ars),0) as v FROM colocaciones WHERE estado!='Pagado'").v,
     ventas_recientes: db.prepare(`SELECT v.*,u.nombre as vendedor FROM ventas v LEFT JOIN users u ON v.user_id=u.id WHERE v.fecha BETWEEN ? AND ? ORDER BY v.fecha DESC LIMIT 8`).all(desde,hasta),
+    col_recientes:    db.prepare(`SELECT c.*,u.nombre as vendedor FROM colocaciones c LEFT JOIN users u ON c.user_id=u.id WHERE c.fecha BETWEEN ? AND ? ORDER BY c.fecha DESC LIMIT 5`).all(desde,hasta),
   });
 });
 
