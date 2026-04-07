@@ -165,11 +165,6 @@ textarea{height:60px;resize:vertical}
 .col-section{display:none;margin-top:10px}
 .col-section.open{display:block}
 .perfileria-box{background:var(--bg3);border-radius:var(--r);padding:12px;margin-top:10px}
-.perf-row{display:grid;grid-template-columns:1fr 80px 80px 100px;gap:8px;align-items:center;font-size:13px;margin-bottom:8px}
-.perf-row:last-child{margin-bottom:0}
-.perf-lbl{color:var(--text2)}
-.perf-total{font-family:'DM Mono',monospace;color:var(--text);text-align:right}
-
 /* VENTA ROWS */
 .vr{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
 .vr:last-child{border-bottom:none}
@@ -246,7 +241,8 @@ textarea{height:60px;resize:vertical}
       <div class="ni" onclick="go('stock')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 7l-8-4-8 4m16 0v10l-8 4-8-4V7m8 4v10"/></svg>Stock</div>
       <div class="nsec">Registro</div>
       <div class="ni" onclick="go('ventas')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 17H5a2 2 0 00-2 2 2 2 0 002 2h14a2 2 0 002-2 2 2 0 00-2-2h-4M9 17V5a2 2 0 012-2h2a2 2 0 012 2v12M9 17h6"/></svg>Historial ventas</div>
-      <div class="ni" onclick="go('colocaciones')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Colocaciones</div>
+      <div class="ni" onclick="go('nueva-col')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Nueva colocación</div>
+      <div class="ni" onclick="go('colocaciones')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Historial colocaciones</div>
       <div class="ni admin-only" onclick="go('admin')" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Usuarios</div>
       <div class="ni" onclick="go('cuenta')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Mi cuenta</div>
     </nav>
@@ -277,9 +273,10 @@ textarea{height:60px;resize:vertical}
         </div>
         <div class="metrics" id="dash-metrics"></div>
         <div class="grid2">
-          <div class="card"><div class="card-head"><h2>Alertas de stock</h2><span id="alerta-badge" class="badge b-danger" style="display:none"></span></div><div id="dash-alertas"></div></div>
           <div class="card"><div class="card-head"><h2>Ventas del mes</h2></div><div id="dash-ventas"></div></div>
+          <div class="card"><div class="card-head"><h2>Colocaciones del mes</h2></div><div id="dash-cols"></div></div>
         </div>
+        <div class="card"><div class="card-head"><h2>Alertas de stock</h2><span id="alerta-badge" class="badge b-danger" style="display:none"></span></div><div id="dash-alertas"></div></div>
       </div>
 
       <!-- NUEVA VENTA -->
@@ -328,40 +325,6 @@ textarea{height:60px;resize:vertical}
             <div class="fg"><label>Observaciones</label><input id="v-obs"></div>
           </div>
 
-          <!-- Colocación opcional -->
-          <div class="section-toggle" onclick="toggleColSection()">
-            <span class="toggle-arrow" id="col-arrow">▶</span>
-            <span>Agregar colocación a esta venta</span>
-            <span style="font-size:11px;color:var(--text3);margin-left:auto">Opcional</span>
-          </div>
-          <div class="col-section" id="col-section">
-            <div class="fgrid g2">
-              <div class="fg"><label>Colocador *</label><input id="v-colocador" placeholder="Nombre del colocador"></div>
-              <div class="fg"><label>Honorarios colocación (USD)</label><input type="number" id="v-honorarios" value="0" oninput="calcColTotal()"></div>
-            </div>
-            <div class="perfileria-box">
-              <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Perfilería</div>
-              <div class="perf-row">
-                <span class="perf-lbl">Omega 2.50mts</span>
-                <input type="number" id="v-omega" value="0" min="0" oninput="calcColTotal()" style="text-align:center">
-                <span style="font-size:12px;color:var(--text3);font-family:'DM Mono',monospace">USD 5.00 c/u</span>
-                <span class="perf-total" id="omega-sub">USD 0.00</span>
-              </div>
-              <div class="perf-row">
-                <span class="perf-lbl">PGC</span>
-                <input type="number" id="v-pgc" value="0" min="0" oninput="calcColTotal()" style="text-align:center">
-                <span style="font-size:12px;color:var(--text3);font-family:'DM Mono',monospace">USD 16.50 c/u</span>
-                <span class="perf-total" id="pgc-sub">USD 0.00</span>
-              </div>
-            </div>
-            <div class="total-box" style="margin-top:10px">
-              <div class="total-row"><span>Subtotal perfilería</span><span id="col-perf-tot" style="font-family:'DM Mono',monospace">USD 0.00</span></div>
-              <div class="total-row"><span>Honorarios</span><span id="col-hon-tot" style="font-family:'DM Mono',monospace">USD 0.00</span></div>
-              <div class="total-final"><span>Total colocación</span><span id="col-total-usd" style="font-family:'DM Mono',monospace">USD 0.00</span></div>
-            </div>
-            <div class="fg" style="margin-top:10px"><label>Observaciones colocación</label><textarea id="v-col-obs"></textarea></div>
-          </div>
-
           <div class="form-actions" style="margin-top:16px">
             <button class="btn" onclick="resetVenta()">Limpiar</button>
             <button class="btn btn-white" onclick="guardarVenta()">Registrar venta</button>
@@ -407,10 +370,46 @@ textarea{height:60px;resize:vertical}
         </div>
       </div>
 
+      <!-- NUEVA COLOCACIÓN -->
+      <div class="section" id="sec-nueva-col">
+        <div class="page-head"><div><h1>Nueva colocación</h1><p>Registro de mano de obra de instalación</p></div></div>
+        <div class="card" style="max-width:640px">
+          <div class="fgrid g2">
+            <div class="fg"><label>Cliente *</label><input id="nc2-cli" placeholder="Nombre o razón social"></div>
+            <div class="fg"><label>Colocador *</label><input id="nc2-col" placeholder="Nombre del colocador"></div>
+          </div>
+          <div class="fgrid g3" style="margin-top:10px">
+            <div class="fg"><label>Fecha *</label><input type="date" id="nc2-fecha"></div>
+            <div class="fg"><label>Dólar del día</label><input type="number" id="nc2-dolar" value="1400" oninput="calcNC2Total()"></div>
+            <div class="fg"><label>Estado</label>
+              <select id="nc2-estado"><option>Pendiente</option><option>Pagado</option></select>
+            </div>
+          </div>
+          <div style="margin-top:14px;padding:16px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border2)">
+            <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">Mano de obra</div>
+            <div class="fg"><label>Total mano de obra (USD)</label><input type="number" id="nc2-hon" value="0" step="0.01" oninput="calcNC2Total()"></div>
+            <div class="total-box" style="margin-top:12px">
+              <div class="total-row"><span>Honorarios USD</span><span id="nc2-tot-usd" style="font-family:'DM Mono',monospace">USD 0.00</span></div>
+              <div class="total-final"><span>Total en pesos</span><span id="nc2-tot-ars" style="font-family:'DM Mono',monospace">$0</span></div>
+            </div>
+          </div>
+          <div style="margin-top:14px">
+            <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Vincular a venta (opcional)</div>
+            <div class="fg"><label>Código de venta</label><input id="nc2-venta-cod" placeholder="Ej: TV-202604-001" oninput="buscarVentaCod()"></div>
+            <div id="nc2-venta-info" style="font-size:12px;color:var(--text3);margin-top:4px"></div>
+          </div>
+          <div class="fg" style="margin-top:10px"><label>Observaciones</label><textarea id="nc2-obs"></textarea></div>
+          <div class="form-actions" style="margin-top:14px">
+            <button class="btn" onclick="resetNC2()">Limpiar</button>
+            <button class="btn btn-white" onclick="guardarNuevaCol()">Registrar colocación</button>
+          </div>
+        </div>
+      </div>
+
       <!-- COLOCACIONES -->
       <div class="section" id="sec-colocaciones">
-        <div class="page-head"><div><h1>Colocaciones</h1><p>Omega USD 5 · PGC USD 16.50</p></div>
-          <button class="btn btn-white" onclick="openModal('nueva-col')">+ Nueva colocación</button>
+        <div class="page-head"><div><h1>Historial colocaciones</h1></div>
+          <button class="btn btn-danger admin-only" onclick="borrarHistorialCol()" style="display:none">Borrar historial</button>
         </div>
         <div class="sbar">
           <input id="col-q" placeholder="Buscar cliente o colocador..." oninput="renderColocaciones()" style="max-width:280px;flex:1">
@@ -420,7 +419,7 @@ textarea{height:60px;resize:vertical}
         </div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>Código</th><th>Fecha</th><th>Cliente</th><th>Colocador</th><th>Omega</th><th>PGC</th><th>Perfilería USD</th><th>Honorarios USD</th><th>Total USD</th><th>Total $</th><th>Estado</th><th>Venta</th><th></th></tr></thead>
+            <thead><tr><th>Código</th><th>Fecha</th><th>Cliente</th><th>Colocador</th><th>Mano de obra USD</th><th>Total $</th><th>Estado</th><th>Venta vinculada</th><th></th></tr></thead>
             <tbody id="col-tbody"></tbody>
           </table>
           <div class="tbl-footer" id="col-footer"></div>
@@ -550,35 +549,25 @@ textarea{height:60px;resize:vertical}
   <div id="ev-err" style="font-size:12px;color:var(--red);margin-top:8px"></div>
 </div></div>
 
-<!-- Nueva colocación -->
+<!-- Editar colocación -->
 <div class="modal-mask" id="modal-nueva-col"><div class="modal">
-  <h3 id="ncol-title">Nueva colocación</h3>
+  <h3 id="ncol-title">Editar colocación</h3>
   <div class="fgrid g2">
     <div class="fg"><label>Cliente *</label><input id="nc-cli"></div>
-    <div class="fg"><label>Colocador *</label><input id="nc-col" placeholder="Nombre"></div>
+    <div class="fg"><label>Colocador *</label><input id="nc-col"></div>
   </div>
-  <div class="fgrid g2" style="margin-top:10px">
+  <div class="fgrid g3" style="margin-top:10px">
     <div class="fg"><label>Fecha *</label><input type="date" id="nc-fecha"></div>
     <div class="fg"><label>Dólar</label><input type="number" id="nc-dolar" value="1400" oninput="calcNColTotal()"></div>
-  </div>
-  <div class="modal-sep">Perfilería</div>
-  <div class="fgrid g2">
-    <div class="fg"><label>Omega 2.50mts (USD 5 c/u)</label><input type="number" id="nc-omega" value="0" min="0" oninput="calcNColTotal()"></div>
-    <div class="fg"><label>PGC (USD 16.50 c/u)</label><input type="number" id="nc-pgc" value="0" min="0" oninput="calcNColTotal()"></div>
-  </div>
-  <div class="fg" style="margin-top:10px"><label>Honorarios colocación (USD)</label><input type="number" id="nc-hon" value="0" oninput="calcNColTotal()"></div>
-  <div class="total-box" style="margin-top:10px">
-    <div class="total-row"><span>Perfilería</span><span id="nc-perf" style="font-family:'DM Mono',monospace">USD 0.00</span></div>
-    <div class="total-row"><span>Honorarios</span><span id="nc-hon-tot" style="font-family:'DM Mono',monospace">USD 0.00</span></div>
-    <div class="total-final"><span>Total USD</span><span id="nc-total-usd" style="font-family:'DM Mono',monospace">USD 0.00</span></div>
-    <div class="total-row" style="padding-top:4px"><span>Total pesos</span><span id="nc-total-ars" style="font-family:'DM Mono',monospace;color:var(--text2)">$0</span></div>
-  </div>
-  <div class="modal-sep">Vincular a venta (opcional)</div>
-  <div class="fg"><label>Código de venta</label><select id="nc-venta-id"><option value="">— Sin vincular —</option></select></div>
-  <div class="fgrid g2" style="margin-top:10px">
     <div class="fg"><label>Estado</label><select id="nc-estado"><option>Pendiente</option><option>Pagado</option></select></div>
-    <div class="fg"><label>Observaciones</label><input id="nc-obs"></div>
   </div>
+  <div class="fg" style="margin-top:10px"><label>Total mano de obra (USD)</label><input type="number" id="nc-hon" value="0" step="0.01" oninput="calcNColTotal()"></div>
+  <div class="total-box" style="margin-top:10px">
+    <div class="total-row"><span>Honorarios</span><span id="nc-hon-tot" style="font-family:'DM Mono',monospace">USD 0.00</span></div>
+    <div class="total-final"><span>Total pesos</span><span id="nc-total-ars" style="font-family:'DM Mono',monospace">$0</span></div>
+  </div>
+  <div class="fg" style="margin-top:10px"><label>Código de venta vinculada</label><input id="nc-venta-cod" placeholder="Ej: TV-202604-001"></div>
+  <div class="fg" style="margin-top:8px"><label>Observaciones</label><input id="nc-obs"></div>
   <div class="modal-btns">
     <button class="btn btn-danger btn-sm admin-only" id="ncol-del-btn" onclick="eliminarColConfirm()" style="display:none;margin-right:auto">Eliminar</button>
     <button class="btn" onclick="closeModal('nueva-col')">Cancelar</button>
@@ -668,7 +657,7 @@ function go(sec){
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
   $('sec-'+sec).classList.add('active');
-  const map={dash:0,'nueva-venta':1,stock:2,ventas:3,colocaciones:4,admin:5,cuenta:6};
+  const map={dash:0,'nueva-venta':1,stock:2,ventas:3,'nueva-col':4,colocaciones:5,admin:6,cuenta:7};
   const items=[...document.querySelectorAll('.ni')];
   if(items[map[sec]]) items[map[sec]].classList.add('active');
   closeSb();
@@ -676,6 +665,7 @@ function go(sec){
   if(sec==='stock') renderStock();
   if(sec==='dash') renderDash();
   if(sec==='colocaciones') renderColocaciones();
+  if(sec==='nueva-col') initNuevaCol();
   if(sec==='admin') loadUsers();
 }
 function openSb(){$('sidebar').classList.add('drawer','open');$('drawer-overlay').classList.add('open')}
@@ -692,10 +682,10 @@ async function renderDash(){
   $('dash-mes-lbl').textContent=mesLabel(dashMes);
   let res;try{res=await api('GET',`/api/resumen?mes=${dashMes}`)}catch{return}
   $('dash-metrics').innerHTML=`
-    <div class="metric"><div class="m-lbl">Ventas del mes USD</div><div class="m-val">${fUsd(res.ventas_mes_usd)}</div><div class="m-sub">${res.cant_ventas_mes} operaciones</div></div>
-    <div class="metric"><div class="m-lbl">Ventas del mes $</div><div class="m-val">${fArs(res.ventas_mes_ars)}</div></div>
-    <div class="metric warn"><div class="m-lbl">Pendiente cobro</div><div class="m-val">${fArs(res.pendiente)}</div></div>
-    <div class="metric danger"><div class="m-lbl">Stock en alerta</div><div class="m-val">${res.productos_alerta+res.productos_sin_stock}</div><div class="m-sub">${res.productos_sin_stock} sin stock</div></div>`;
+    <div class="metric"><div class="m-lbl">Ventas productos USD</div><div class="m-val">${fUsd(res.ventas_mes_usd)}</div><div class="m-sub">${res.cant_ventas_mes} ventas</div></div>
+    <div class="metric"><div class="m-lbl">Ventas productos $</div><div class="m-val">${fArs(res.ventas_mes_ars)}</div></div>
+    <div class="metric"><div class="m-lbl">Colocaciones USD</div><div class="m-val">${fUsd(res.col_mes_usd)}</div><div class="m-sub">${fArs(res.col_mes_ars)}</div></div>
+    <div class="metric warn"><div class="m-lbl">Pendiente cobro total</div><div class="m-val">${fArs(res.pendiente+res.col_pendiente)}</div><div class="m-sub">Productos + colocaciones</div></div>`;
   const alertas=DATA.productos.filter(p=>p.stock<=p.punto).sort((a,b)=>a.stock-b.stock);
   const ab=$('alerta-badge');ab.textContent=alertas.length||'';ab.style.display=alertas.length?'':'none';
   $('dash-alertas').innerHTML=alertas.length?alertas.map(p=>{
@@ -710,6 +700,11 @@ async function renderDash(){
       <div class="vr-prod">${(v.items||[]).length} artículo${(v.items||[]).length!==1?'s':''}</div></div>
       <div class="vr-right"><div class="vr-ars">${fArs(v.total_ars)}</div>
         <span class="badge b-${statC(v.estado)}">${v.estado}</span></div></div>`).join(''):`<div style="padding:2rem;text-align:center;color:var(--text3)">Sin ventas este mes</div>`;
+  $('dash-cols').innerHTML=res.col_recientes&&res.col_recientes.length?res.col_recientes.map(c=>`
+    <div class="vr"><div class="vr-info"><div class="vr-cli">${c.cliente}</div>
+      <div class="vr-prod">${c.colocador}${c.venta_cod?' · '+c.venta_cod:''}</div></div>
+      <div class="vr-right"><div class="vr-ars">${fArs(c.total_ars)}</div>
+        <span class="badge b-${statC(c.estado)}">${c.estado}</span></div></div>`).join(''):`<div style="padding:2rem;text-align:center;color:var(--text3)">Sin colocaciones este mes</div>`;
 }
 function mesAnterior(){const[y,m]=dashMes.split('-').map(Number);dashMes=m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,'0')}`;renderDash()}
 function mesSiguiente(){const[y,m]=dashMes.split('-').map(Number);const h=new Date().toISOString().substring(0,7);if(dashMes>=h)return;dashMes=m===12?`${y+1}-01`:`${y}-${String(m+1).padStart(2,'0')}`;renderDash()}
@@ -847,14 +842,7 @@ async function guardarVenta(){
   const body={fecha:$('v-fecha').value,cliente:cli,tel:$('v-tel').value,canal:$('v-canal').value,dolar:parseFloat($('v-dolar').value)||1400,pago:$('v-pago').value,estado:$('v-estado').value,logistica:$('v-logistica').value,dir:$('v-dir').value,obs:$('v-obs').value,items};
   try{
     const r=await api('POST','/api/ventas',body);
-    // Guardar colocación vinculada si está abierta
-    const colOpen=$('col-section').classList.contains('open');
-    if(colOpen&&$('v-colocador').value.trim()){
-      const omega=parseFloat($('v-omega').value)||0,pgc=parseFloat($('v-pgc').value)||0;
-      const hon=parseFloat($('v-honorarios').value)||0,dolar=parseFloat($('v-dolar').value)||1400;
-      await api('POST','/api/colocaciones',{venta_id:null,cliente:cli,colocador:$('v-colocador').value.trim(),fecha:$('v-fecha').value,dolar,omega_qty:omega,pgc_qty:pgc,precio_omega:5,precio_pgc:16.5,honorarios_usd:hon,estado:'Pendiente',obs:$('v-col-obs').value});
-      await loadColocaciones();
-    }
+
     await Promise.all([loadProductos(),loadVentas()]);
     renderDash();renderStock();resetVenta();
     toast(`Venta registrada: ${r.cod} · ${fArs(r.total_ars)}`);
@@ -862,12 +850,10 @@ async function guardarVenta(){
 }
 
 function resetVenta(){
-  ['v-cli','v-tel','v-dir','v-obs','v-colocador','v-col-obs','v-honorarios','v-omega','v-pgc'].forEach(id=>{const el=$(id);if(el)el.value=id.includes('hon')||id.includes('omega')||id.includes('pgc')?'0':''});
+  ['v-cli','v-tel','v-dir','v-obs'].forEach(id=>{const el=$(id);if(el)el.value=''});
   $('v-dolar').value='1400';$('v-fecha').value=new Date().toISOString().split('T')[0];
   $('items-container').innerHTML='';itemRowId=0;addItemRow();
   $('total-box').style.display='none';
-  $('col-section').classList.remove('open');$('col-arrow').classList.remove('open');
-  calcColTotal();
 }
 
 // ── HISTORIAL VENTAS ───────────────────────────────────
@@ -977,14 +963,46 @@ async function borrarHistorial(){
   catch(e){toast(e.message,false)}
 }
 
-// ── COLOCACIONES ───────────────────────────────────────
+// ── NUEVA COLOCACIÓN (página) ─────────────────────────
+function initNuevaCol(){
+  if(!$('nc2-fecha').value) $('nc2-fecha').value=new Date().toISOString().split('T')[0];
+}
+function calcNC2Total(){
+  const hon=parseFloat($('nc2-hon').value)||0,dolar=parseFloat($('nc2-dolar').value)||1400;
+  $('nc2-tot-usd').textContent=fUsd(hon);
+  $('nc2-tot-ars').textContent=fArs(Math.round(hon*dolar));
+}
+function buscarVentaCod(){
+  const cod=$('nc2-venta-cod').value.trim().toUpperCase();
+  const v=DATA.ventas.find(x=>x.cod.toUpperCase()===cod);
+  $('nc2-venta-info').textContent=v?`✓ ${v.cliente} — ${fArs(v.total_ars)}`:cod?'Código no encontrado':'';
+  $('nc2-venta-info').style.color=v?'var(--green)':'var(--text3)';
+}
+async function guardarNuevaCol(){
+  const cli=$('nc2-cli').value.trim(),col=$('nc2-col').value.trim();
+  if(!cli||!col){toast('Cliente y colocador requeridos',false);return}
+  const hon=parseFloat($('nc2-hon').value)||0;
+  if(!hon){toast('Ingresá el total de mano de obra',false);return}
+  const body={cliente:cli,colocador:col,fecha:$('nc2-fecha').value,dolar:parseFloat($('nc2-dolar').value)||1400,honorarios_usd:hon,estado:$('nc2-estado').value,obs:$('nc2-obs').value,venta_cod:$('nc2-venta-cod').value.trim()};
+  try{
+    const r=await api('POST','/api/colocaciones',body);
+    await loadColocaciones();resetNC2();toast(`Colocación registrada: ${r.cod} · ${fArs(r.total_ars)}`);
+    renderDash();
+  }catch(e){toast(e.message,false)}
+}
+function resetNC2(){
+  ['nc2-cli','nc2-col','nc2-obs','nc2-venta-cod'].forEach(id=>$(id).value='');
+  $('nc2-hon').value='0';$('nc2-dolar').value='1400';
+  $('nc2-fecha').value=new Date().toISOString().split('T')[0];
+  $('nc2-venta-info').textContent='';
+  calcNC2Total();
+}
+
+// ── COLOCACIONES HISTORIAL ─────────────────────────────
 function calcNColTotal(){
-  const omega=parseFloat($('nc-omega').value)||0,pgc=parseFloat($('nc-pgc').value)||0;
   const hon=parseFloat($('nc-hon').value)||0,dolar=parseFloat($('nc-dolar').value)||1400;
-  const perf=parseFloat((omega*5+pgc*16.5).toFixed(2));
-  const tu=parseFloat((perf+hon).toFixed(2));
-  $('nc-perf').textContent=fUsd(perf);$('nc-hon-tot').textContent=fUsd(hon);
-  $('nc-total-usd').textContent=fUsd(tu);$('nc-total-ars').textContent=fArs(Math.round(tu*dolar));
+  $('nc-perf').textContent=fUsd(0);$('nc-hon-tot').textContent=fUsd(hon);
+  $('nc-total-usd').textContent=fUsd(hon);$('nc-total-ars').textContent=fArs(Math.round(hon*dolar));
 }
 
 function renderColocaciones(){
@@ -1003,14 +1021,10 @@ function renderColocaciones(){
       <td style="white-space:nowrap">${fDate(c.fecha)}</td>
       <td style="font-weight:500">${c.cliente}</td>
       <td style="color:var(--text2)">${c.colocador}</td>
-      <td class="mono">${c.omega_qty||0}</td>
-      <td class="mono">${c.pgc_qty||0}</td>
-      <td class="mono">${fUsd(c.subtotal_perfileria_usd)}</td>
-      <td class="mono">${fUsd(c.honorarios_usd)}</td>
-      <td class="mono" style="font-weight:600">${fUsd(c.total_usd)}</td>
+      <td class="mono" style="font-weight:600">${fUsd(c.honorarios_usd)}</td>
       <td class="mono">${fArs(c.total_ars)}</td>
       <td><span class="badge b-${statC(c.estado)}">${c.estado}</span></td>
-      <td class="mono" style="font-size:11px">${c.venta_cod||'—'}</td>
+      <td class="mono" style="font-size:11px;color:var(--blue)">${c.venta_cod||'—'}</td>
       <td><button class="btn btn-sm" onclick='abrirEditCol(${JSON.stringify(c)})'>Editar</button></td>
     </tr>`).join('');
   });
@@ -1023,20 +1037,17 @@ function abrirEditCol(c){
   editColId=c.id;
   $('ncol-title').textContent='Editar colocación';
   $('nc-cli').value=c.cliente;$('nc-col').value=c.colocador;$('nc-fecha').value=c.fecha;
-  $('nc-dolar').value=c.dolar||1400;$('nc-omega').value=c.omega_qty||0;$('nc-pgc').value=c.pgc_qty||0;
-  $('nc-hon').value=c.honorarios_usd||0;$('nc-estado').value=c.estado||'Pendiente';$('nc-obs').value=c.obs||'';
+  $('nc-dolar').value=c.dolar||1400;$('nc-hon').value=c.honorarios_usd||0;
+  $('nc-estado').value=c.estado||'Pendiente';$('nc-obs').value=c.obs||'';
+  $('nc-venta-cod').value=c.venta_cod||'';
   const delBtn=$('ncol-del-btn');if(delBtn) delBtn.style.display=SESSION?.user?.rol==='admin'?'':'none';
-  // Build venta select
-  const sel=$('nc-venta-id');
-  sel.innerHTML='<option value="">— Sin vincular —</option>';
-  DATA.ventas.forEach(v=>{const o=document.createElement('option');o.value=v.id;o.textContent=`${v.cod} — ${v.cliente}`;if(v.id===c.venta_id)o.selected=true;sel.appendChild(o)});
   calcNColTotal();$('nc-err').textContent='';openModal('nueva-col');
 }
 
 async function saveColocacion(){
   const cli=$('nc-cli').value.trim(),col=$('nc-col').value.trim();
   if(!cli||!col){$('nc-err').textContent='Cliente y colocador requeridos';return}
-  const body={cliente:cli,colocador:col,fecha:$('nc-fecha').value,dolar:parseFloat($('nc-dolar').value)||1400,omega_qty:parseFloat($('nc-omega').value)||0,pgc_qty:parseFloat($('nc-pgc').value)||0,precio_omega:5,precio_pgc:16.5,honorarios_usd:parseFloat($('nc-hon').value)||0,estado:$('nc-estado').value,obs:$('nc-obs').value,venta_id:$('nc-venta-id').value||null};
+  const body={cliente:cli,colocador:col,fecha:$('nc-fecha').value,dolar:parseFloat($('nc-dolar').value)||1400,honorarios_usd:parseFloat($('nc-hon').value)||0,estado:$('nc-estado').value,obs:$('nc-obs').value,venta_cod:$('nc-venta-cod').value||''};
   try{
     if(editColId) await api('PUT',`/api/colocaciones/${editColId}`,body);
     else await api('POST','/api/colocaciones',body);
@@ -1102,15 +1113,15 @@ function openModal(name){
     $('mi-cant').value='1';$('mi-cont').value='';
   }
   if(name==='nuevo-prod'){['mp-cod','mp-nom'].forEach(id=>$(id).value='');$('mp-stock').value='0';$('mp-punto').value='1';$('mp-err').textContent='';}
-  if(name==='nueva-col'&&!editColId){
-    $('ncol-title').textContent='Nueva colocación';
-    ['nc-cli','nc-col','nc-obs'].forEach(id=>$(id).value='');
-    $('nc-fecha').value=new Date().toISOString().split('T')[0];
-    $('nc-dolar').value='1400';$('nc-omega').value='0';$('nc-pgc').value='0';$('nc-hon').value='0';$('nc-estado').value='Pendiente';
-    const sel=$('nc-venta-id');sel.innerHTML='<option value="">— Sin vincular —</option>';
-    DATA.ventas.slice(0,50).forEach(v=>{const o=document.createElement('option');o.value=v.id;o.textContent=`${v.cod} — ${v.cliente}`;sel.appendChild(o)});
-    const delBtn=$('ncol-del-btn');if(delBtn)delBtn.style.display='none';
-    calcNColTotal();$('nc-err').textContent='';
+  if(name==='nueva-col'){
+    if(!editColId){
+      $('ncol-title').textContent='Nueva colocación';
+      ['nc-cli','nc-col','nc-obs','nc-venta-cod'].forEach(id=>$(id).value='');
+      $('nc-fecha').value=new Date().toISOString().split('T')[0];
+      $('nc-dolar').value='1400';$('nc-hon').value='0';$('nc-estado').value='Pendiente';
+      const delBtn=$('ncol-del-btn');if(delBtn)delBtn.style.display='none';
+      calcNColTotal();$('nc-err').textContent='';
+    }
   }
   $(`modal-${name}`).classList.add('open');
 }
